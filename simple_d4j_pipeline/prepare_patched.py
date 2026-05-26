@@ -64,13 +64,13 @@ def main():
     ap.add_argument('--csv', required=True, help='manual-evaluation CSV path')
     ap.add_argument('--repos-dir', required=True)
     ap.add_argument('-p', '--project', help='restrict to one project')
+    ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
     ap.add_argument('--include-test-changes', action='store_true',
                     help='also apply the LLM patch to test files (default: skip)')
     args = ap.parse_args()
 
     bugs = csv_data.load_incorrect(args.csv)
-    targets = [(b, i) for b, i in sorted(bugs.items())
-               if not args.project or i['pid'] == args.project]
+    targets = csv_data.select(bugs, args.project, args.bug)
     n_variants = sum(len(i['incorrect']) for _, i in targets)
     plog.log(f'building buggy_<llm> checkouts: {len(targets)} bug(s), '
              f'{n_variants} variant(s)')

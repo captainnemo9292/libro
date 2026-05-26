@@ -103,12 +103,11 @@ def main():
     ap.add_argument('--tests-dir', required=True, help='dir with *_aug.txt')
     ap.add_argument('--out', default='aug_results.json')
     ap.add_argument('-p', '--project')
+    ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
     args = ap.parse_args()
 
     bugs = csv_data.load_incorrect(args.csv)
-    targets = [(b, i) for b, i in sorted(bugs.items())
-               if not args.project or i['pid'] == args.project]
-    targets = [(b, i) for b, i in targets
+    targets = [(b, i) for b, i in csv_data.select(bugs, args.project, args.bug)
                if path.isfile(path.join(args.tests_dir, f"{i['pid']}_{i['bug']}_aug.txt"))]
     plog.log(f'evaluating {len(targets)} augmented test(s)')
 

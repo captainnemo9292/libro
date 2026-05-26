@@ -138,6 +138,7 @@ def main():
     ap.add_argument('--tests-dir', required=True, help='output dir for *_aug.txt')
     ap.add_argument('--model', default='gpt-5.4-mini')
     ap.add_argument('-p', '--project', help='restrict to one project')
+    ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
     ap.add_argument('--overwrite', action='store_true')
     ap.add_argument('--save-prompts', action='store_true',
                     help='also write the prompt to <tests-dir>/<bug>_prompt.txt')
@@ -145,8 +146,7 @@ def main():
 
     os.makedirs(args.tests_dir, exist_ok=True)
     bugs = csv_data.load_incorrect(args.csv)
-    targets = [(b, i) for b, i in sorted(bugs.items())
-               if not args.project or i['pid'] == args.project]
+    targets = csv_data.select(bugs, args.project, args.bug)
     plog.log(f'generating augmented tests for {len(targets)} bug(s) '
              f'with model={args.model}')
 

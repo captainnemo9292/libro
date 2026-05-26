@@ -35,6 +35,19 @@ def repo_llm(pid, bug, llm_key):
     return f'{pid}_{bug}_{llm_key}'
 
 
+def select(bugs, project=None, bug=None):
+    """Filter a load_incorrect() dict by project and/or bug id, returning a
+    sorted list of (bug_id, info). `bug` is the numeric d4j id (e.g. '16')."""
+    out = []
+    for bug_id, info in sorted(bugs.items()):
+        if project and info['pid'] != project:
+            continue
+        if bug and info['bug'] != str(bug):
+            continue
+        out.append((bug_id, info))
+    return out
+
+
 def load_incorrect(csv_path):
     """Return a dict keyed by bug_id for every bug with >=1 usable incorrect
     patch:

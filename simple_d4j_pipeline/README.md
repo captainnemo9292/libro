@@ -84,6 +84,30 @@ python report_stats.py --results aug_results.json --by-project
 A test is **correctly augmented** when it passes on `fixed`, fails on `buggy`,
 and fails on every `buggy_<llm>` variant (≥1 variant required).
 
+### Try a single bug first
+
+To sanity-check the whole augmented flow on one bug in one command
+(checkout → build `buggy_<llm>` → generate → evaluate → print result):
+
+```bash
+OPENAI_API_KEY=... bash try_one.sh Chart 16
+# bash try_one.sh <Project> <bug> [REPOS_DIR] [TESTS_DIR] [CSV] [MODEL]
+```
+
+Defaults: `REPOS_DIR=./repos`, `TESTS_DIR=./aug_tests`,
+`CSV=data/LLM_patch_manual_evaluation.csv`, `MODEL=gpt-5.4-mini`.
+The bug must have ≥1 incorrect LLM patch in the CSV.
+
+Every augmented script also takes `-b/--bug` (with `-p`) to target one bug, so
+you can run any single stage on its own, e.g.:
+
+```bash
+python prepare_patched.py --csv data/LLM_patch_manual_evaluation.csv --repos-dir ./repos -p Chart -b 16
+python eval_augmented.py   --csv data/LLM_patch_manual_evaluation.csv --repos-dir ./repos --tests-dir ./aug_tests -p Chart -b 16
+```
+
+For the FIB flow, `run_pipeline.py -p Time -b 18` runs a single bug.
+
 ### Notes
 
 - **Patch layout**: CSV patches use a normalized `src/main/java/` layout; d4j
@@ -100,6 +124,7 @@ and fails on every `buggy_<llm>` variant (≥1 variant required).
 
 | File | Role |
 |------|------|
+| `try_one.sh` | end-to-end smoke test of the augmented flow on one bug |
 | `checkout_all.sh` | checkout buggy + fixed for all/selected bugs |
 | `injector.py` | resolve imports + inject a method into the best test class |
 | `run_pipeline.py` | FIB runner (inject/compile/run on buggy+fixed) |
