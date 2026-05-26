@@ -82,19 +82,25 @@ python prepare_patched.py --csv eval.csv --repos-dir ./repos \
 #    --include-test-changes  also apply the LLM's edits to test files (default: skip)
 #    -p Chart                restrict to one project
 
-# 3. generate one augmented test per bug via the OpenAI API
+# 3. generate one augmented test per bug via the OpenAI API.
+#    --out-dir + --model writes to <out-dir>/<model>/aug_tests (per-model
+#    folders, same layout as try_k.py). Or use --tests-dir for an explicit path.
 OPENAI_API_KEY=... python gen_augmented.py \
-    --csv eval.csv --repos-dir ./repos --tests-dir ./aug_tests --model gpt-5.4-mini
+    --csv eval.csv --repos-dir ./repos --out-dir ./results --model gpt-5.4-mini
 #    --save-prompts   also dump the prompt sent for each bug
 #    --overwrite      regenerate existing *_aug.txt
 
 # 4. run each augmented test on buggy / fixed / every buggy_<llm>
+#    (same --out-dir/--model derives <out-dir>/<model>/aug_results.json)
 python eval_augmented.py \
-    --csv eval.csv --repos-dir ./repos --tests-dir ./aug_tests --out aug_results.json
+    --csv eval.csv --repos-dir ./repos --out-dir ./results --model gpt-5.4-mini
 
 # 5. stats
-python report_stats.py --results aug_results.json --by-project
+python report_stats.py --results ./results/gpt-5.4-mini/aug_results.json --by-project
 ```
+
+This produces `results/<model>/aug_tests/` (+ `records/`, `cost.json`) and
+`results/<model>/aug_results.json` — identical to `try_k.py`'s per-model layout.
 
 A test is **correctly augmented** when it passes on `fixed`, fails on `buggy`,
 and fails on every `buggy_<llm>` variant (≥1 variant required).

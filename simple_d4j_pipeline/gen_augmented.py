@@ -139,7 +139,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--csv', required=True)
     ap.add_argument('--repos-dir', required=True)
-    ap.add_argument('--tests-dir', required=True, help='output dir for *_aug.txt')
+    ap.add_argument('--tests-dir', help='output dir for *_aug.txt '
+                    '(default <out-dir>/<model>/aug_tests when --out-dir given)')
+    ap.add_argument('--out-dir', help='per-model results root; tests go to '
+                    '<out-dir>/<model>/aug_tests')
     ap.add_argument('--model', default='gpt-5.4-mini')
     ap.add_argument('-p', '--project', help='restrict to one project')
     ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
@@ -157,6 +160,11 @@ def main():
     ap.add_argument('--price-cached', type=float,
                     help='USD per 1M cached input tokens (overrides cost.PRICING)')
     args = ap.parse_args()
+
+    if not args.tests_dir:
+        if not args.out_dir:
+            ap.error('provide --tests-dir or --out-dir')
+        args.tests_dir = path.join(args.out_dir, args.model, 'aug_tests')
 
     os.makedirs(args.tests_dir, exist_ok=True)
     records_dir = args.records_dir or path.join(args.tests_dir, 'records')

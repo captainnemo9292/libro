@@ -100,14 +100,28 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--csv', required=True)
     ap.add_argument('--repos-dir', required=True)
-    ap.add_argument('--tests-dir', required=True, help='dir with *_aug.txt')
-    ap.add_argument('--out', default='aug_results.json')
+    ap.add_argument('--tests-dir', help='dir with *_aug.txt '
+                    '(default <out-dir>/<model>/aug_tests when --out-dir given)')
+    ap.add_argument('--out-dir', help='per-model results root (matches gen/try_k); '
+                    'derives --tests-dir and --out from <out-dir>/<model>')
+    ap.add_argument('--model', default='gpt-5.4-mini',
+                    help='used only to locate the per-model folder under --out-dir')
+    ap.add_argument('--out', help='results JSON (default aug_results.json, or '
+                    '<out-dir>/<model>/aug_results.json)')
     ap.add_argument('-p', '--project')
     ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
     ap.add_argument('--records-dir',
                     help='per-bug artifact dir to merge eval into '
                          '(default <tests-dir>/records)')
     args = ap.parse_args()
+
+    if args.out_dir:
+        base = path.join(args.out_dir, args.model)
+        args.tests_dir = args.tests_dir or path.join(base, 'aug_tests')
+        args.out = args.out or path.join(base, 'aug_results.json')
+    if not args.tests_dir:
+        ap.error('provide --tests-dir or --out-dir')
+    args.out = args.out or 'aug_results.json'
     records_dir = args.records_dir or path.join(args.tests_dir, 'records')
 
     bugs = csv_data.load_incorrect(args.csv)

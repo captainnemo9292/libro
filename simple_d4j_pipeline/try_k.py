@@ -147,12 +147,12 @@ def main():
         plog.log(f'=== model {model}: generate ===')
         run([sys.executable, path.join(HERE, 'gen_augmented.py'),
              '--csv', sel_csv, '--repos-dir', args.repos_dir,
-             '--tests-dir', tests_dir, '--model', model])
+             '--out-dir', args.out_dir, '--model', model])
 
         plog.log(f'=== model {model}: evaluate ===')
         run([sys.executable, path.join(HERE, 'eval_augmented.py'),
              '--csv', sel_csv, '--repos-dir', args.repos_dir,
-             '--tests-dir', tests_dir, '--out', results])
+             '--out-dir', args.out_dir, '--model', model])
         run([sys.executable, path.join(HERE, 'report_stats.py'),
              '--results', results, '--by-project'])
 
