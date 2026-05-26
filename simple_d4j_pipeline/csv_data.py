@@ -1,16 +1,19 @@
 """Read the manual-evaluation CSV and expose the bugs with incorrect LLM patches.
 
-We only look at the two "-ori" model columns the task cares about. A patch
-counts as a usable incorrect patch when its Eval cell == 'incorrect' AND the
-patch text is non-empty.
+We look at both the "-ori" and "-norm" variants of each model. A patch counts
+as a usable incorrect patch when its Eval cell == 'incorrect' AND the patch
+text is non-empty. The llm_key matches the CSV column header, so each variant
+gets its own buggy_<llm> checkout.
 """
 
 import csv
 
-# (llm_key, patch_column_index, eval_column_index) for the two -ori models.
+# (llm_key, patch_column_index, eval_column_index) for each model/variant.
 LLM_COLUMNS = [
-    ('claude-sonnet-4', 4, 5),
-    ('gemini-3-pro-preview', 10, 11),
+    ('claude-sonnet-4-ori', 4, 5),
+    ('claude-sonnet-4-norm', 7, 8),
+    ('gemini-3-pro-preview-ori', 10, 11),
+    ('gemini-3-pro-preview-norm', 13, 14),
 ]
 
 DEV_PATCH_COL = 2

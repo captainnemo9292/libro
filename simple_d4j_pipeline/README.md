@@ -32,7 +32,10 @@ repos/<Project>_<bug>f              fixed checkout      (defects4j -v Nf)
 repos/<Project>_<bug>_<llm>         buggy + incorrect LLM patch (committed)
 ```
 
-LLM keys are `claude-sonnet-4` and `gemini-3-pro-preview` (the `-ori` columns).
+LLM keys match the CSV columns: `claude-sonnet-4-ori`, `claude-sonnet-4-norm`,
+`gemini-3-pro-preview-ori`, `gemini-3-pro-preview-norm`. Each incorrect variant
+gets its own `buggy_<llm>` checkout, and an augmented test must fail on all of
+them.
 
 ---
 
@@ -169,7 +172,7 @@ OPENAI_ADMIN_KEY=sk-admin-... python org_costs.py --days 1
 | `checkout_all.sh` | checkout buggy + fixed for all/selected bugs |
 | `injector.py` | resolve imports + inject a method into the best test class |
 | `run_pipeline.py` | FIB runner (inject/compile/run on buggy+fixed) |
-| `csv_data.py` | read the eval CSV; bugs with incorrect `-ori` patches |
+| `csv_data.py` | read the eval CSV; bugs with incorrect `-ori`/`-norm` patches |
 | `patch_utils.py` | preprocess + apply LLM patches to a checkout |
 | `prepare_patched.py` | build `buggy_<llm>` checkouts |
 | `d4j_tests.py` | extract bug-triggering developer test methods |
