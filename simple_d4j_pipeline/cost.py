@@ -20,7 +20,13 @@ from os import path
 # cached_input is optional; if omitted, cached tokens are billed at the input
 # rate. Override at runtime with --price-in / --price-out / --price-cached.
 PRICING = {
-    'gpt-5.4-mini': (0.75, 4.50, 0.075),
+    'gpt-5.5':       (5.00, 30.00, 0.50),
+    'gpt-5.4':       (2.50, 15.00, 0.25),
+    'gpt-5.4-mini':  (0.75,  4.50, 0.075),
+    'gpt-5.2':       (1.75, 14.00, 0.175),
+    'gpt-5.1':       (1.25, 10.00, 0.125),
+    'gpt-5':         (1.25, 10.00, 0.125),
+    'gpt-5-mini':    (0.25,  2.00, 0.025),
 }
 
 

@@ -141,10 +141,12 @@ For the FIB flow, `run_pipeline.py -p Time -b 18` runs a single bug.
   **cost**. `eval_augmented.py` then merges the **eval result** into the same
   file under an `eval` key.
 
-Pricing is USD per 1M tokens. `gpt-5.4-mini` is built into `cost.PRICING`
-(input $0.75, output $4.50, cached input $0.075), so cost — including the
-cheaper rate for cached prompt tokens — is computed automatically. For other
-models, either add an entry to `cost.PRICING` or pass prices explicitly:
+Pricing is USD per 1M tokens. The gpt-5 family (`gpt-5`, `gpt-5-mini`,
+`gpt-5.1`, `gpt-5.2`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.5`) is built into
+`cost.PRICING` with input/output/cached-input rates, so just pick one with
+`--model` and cost — including the cheaper rate for cached prompt tokens — is
+computed automatically. For other models, add an entry to `cost.PRICING` or
+pass prices explicitly:
 
 ```bash
 python gen_augmented.py ... --price-in 0.75 --price-out 4.50 --price-cached 0.075
