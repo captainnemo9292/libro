@@ -38,7 +38,14 @@ PRICE_ARGS=()
 SRC_DIR="${SRC_DIR:-}"
 SOLUTIONS_DIR="${SOLUTIONS_DIR:-$SRC_DIR}"
 PREP_ARGS=()
-[ -n "$SOLUTIONS_DIR" ] && PREP_ARGS+=(--solutions-dir "$SOLUTIONS_DIR")
+if [ -n "$SOLUTIONS_DIR" ]; then
+    PREP_ARGS+=(--solutions-dir "$SOLUTIONS_DIR")
+else
+    echo "### WARNING: no SRC_DIR/SOLUTIONS_DIR set -> prepare_patched.py will fall"
+    echo "###          back to diff application, which fails on these reformatted"
+    echo "###          patches. Set SRC_DIR to the parent of the <Project>-<bug>"
+    echo "###          dirs (e.g. SRC_DIR=..) to copy full LLM solution files."
+fi
 
 echo "### bug=${PID}-${BUG}  repos=${REPOS_DIR}  tests=${TESTS_DIR}  model=${MODEL}"
 
