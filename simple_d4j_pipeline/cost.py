@@ -1,10 +1,11 @@
 """Per-call and cumulative OpenAI cost tracking for the generation pipeline.
 
 Cost is computed from the token usage returned on each API response
-(`usage.input_tokens` / `output_tokens`, or the chat-completions
-`prompt_tokens` / `completion_tokens`) multiplied by the model's per-token
-price. Prices are in USD per 1,000,000 tokens and can be overridden at runtime
-with --price-in / --price-out.
+(`usage.input_tokens` / `output_tokens`, plus cached input tokens from
+`usage.input_tokens_details.cached_tokens`; the chat-completions equivalents
+are `prompt_tokens` / `completion_tokens` / `prompt_tokens_details`) multiplied
+by the model's per-token price. Prices are USD per 1,000,000 tokens and can be
+overridden at runtime with --price-in / --price-out / --price-cached.
 
 For org-wide *billed* cost reconciliation, see org_costs.py, which queries the
 OpenAI Organization Costs API.
@@ -15,72 +16,92 @@ import json
 import time
 from os import path
 
-# USD per 1,000,000 tokens: (input, output).
-# These are NOT authoritative -- set the real numbers here or pass
-# --price-in / --price-out on the command line.
+# USD per 1,000,000 tokens: (input, output, cached_input).
+# cached_input is optional; if omitted, cached tokens are billed at the input
+# rate. Override at runtime with --price-in / --price-out / --price-cached.
 PRICING = {
-    'gpt-5.4-mini': (None, None),   # unknown to this script; supply prices
+    'gpt-5.4-mini': (0.75, 4.50, 0.075),
 }
 
 
+def _get(obj, *names):
+    for n in names:
+        v = getattr(obj, n, None)
+        if v is None and isinstance(obj, dict):
+            v = obj.get(n)
+        if v is not None:
+            return v
+    return None
+
+
 def normalize_usage(resp):
-    """Extract (input, output, total) token counts from a Responses or
-    ChatCompletions response (object or dict)."""
+    """Extract token counts from a Responses or ChatCompletions response.
+
+    Returns input_tokens (total prompt tokens, including cached),
+    cached_input_tokens, output_tokens, total_tokens."""
     usage = getattr(resp, 'usage', None)
     if usage is None and isinstance(resp, dict):
         usage = resp.get('usage')
     if usage is None:
-        return {'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
+        return {'input_tokens': 0, 'cached_input_tokens': 0,
+                'output_tokens': 0, 'total_tokens': 0}
 
-    def get(obj, *names):
-        for n in names:
-            v = getattr(obj, n, None)
-            if v is None and isinstance(obj, dict):
-                v = obj.get(n)
-            if v is not None:
-                return v
-        return 0
+    inp = _get(usage, 'input_tokens', 'prompt_tokens') or 0
+    out = _get(usage, 'output_tokens', 'completion_tokens') or 0
+    tot = _get(usage, 'total_tokens') or (inp + out)
 
-    inp = get(usage, 'input_tokens', 'prompt_tokens')
-    out = get(usage, 'output_tokens', 'completion_tokens')
-    tot = get(usage, 'total_tokens') or (inp + out)
-    return {'input_tokens': inp, 'output_tokens': out, 'total_tokens': tot}
+    cached = 0
+    details = _get(usage, 'input_tokens_details', 'prompt_tokens_details')
+    if details is not None:
+        cached = _get(details, 'cached_tokens') or 0
+
+    return {'input_tokens': inp, 'cached_input_tokens': cached,
+            'output_tokens': out, 'total_tokens': tot}
 
 
-def resolve_price(model, price_in, price_out):
+def resolve_price(model, price_in, price_out, price_cached):
     """Fill in missing prices from the PRICING table if available."""
     table = PRICING.get(model)
-    if price_in is None and table:
-        price_in = table[0]
-    if price_out is None and table:
-        price_out = table[1]
-    return price_in, price_out
+    if table:
+        if price_in is None:
+            price_in = table[0]
+        if price_out is None:
+            price_out = table[1]
+        if price_cached is None and len(table) > 2:
+            price_cached = table[2]
+    return price_in, price_out, price_cached
 
 
-def compute_cost(usage, price_in, price_out):
+def compute_cost(usage, price_in, price_out, price_cached=None):
     if price_in is None or price_out is None:
         return None
-    return (usage['input_tokens'] / 1e6) * price_in + \
+    cached = usage.get('cached_input_tokens', 0) or 0
+    uncached = max(usage['input_tokens'] - cached, 0)
+    cached_rate = price_in if price_cached is None else price_cached
+    return (uncached / 1e6) * price_in + \
+           (cached / 1e6) * cached_rate + \
            (usage['output_tokens'] / 1e6) * price_out
 
 
 class CostTracker:
     """Accumulates per-call cost, persists to JSON (resumable across runs)."""
 
-    def __init__(self, model, price_in, price_out, save_path, logger=print):
+    def __init__(self, model, price_in, price_out, save_path,
+                 price_cached=None, logger=print):
         self.model = model
-        self.price_in, self.price_out = resolve_price(model, price_in, price_out)
+        self.price_in, self.price_out, self.price_cached = resolve_price(
+            model, price_in, price_out, price_cached)
         self.save_path = save_path
         self.log = logger
         self.calls = []
-        self.totals = {'input_tokens': 0, 'output_tokens': 0,
-                       'total_tokens': 0, 'cost_usd': 0.0}
+        self.totals = {'input_tokens': 0, 'cached_input_tokens': 0,
+                       'output_tokens': 0, 'total_tokens': 0, 'cost_usd': 0.0}
         if save_path and path.exists(save_path):
             try:
                 with open(save_path) as f:
                     data = json.load(f)
                 self.calls = data.get('calls', [])
-                self.totals = data.get('totals', self.totals)
+                self.totals = {**self.totals, **data.get('totals', {})}
             except (ValueError, OSError):
                 pass
         if self.price_in is None or self.price_out is None:
@@ -89,23 +110,23 @@ class CostTracker:
                      f'Recording token counts only.')
 
     def add(self, bug_id, usage):
-        cost = compute_cost(usage, self.price_in, self.price_out)
+        cost = compute_cost(usage, self.price_in, self.price_out, self.price_cached)
         if cost is not None:
             cost = round(cost, 6)
         self.calls.append({'bug_id': bug_id, **usage, 'cost_usd': cost,
                            'at': time.strftime('%Y-%m-%dT%H:%M:%S')})
-        self.totals['input_tokens'] += usage['input_tokens']
-        self.totals['output_tokens'] += usage['output_tokens']
-        self.totals['total_tokens'] += usage['total_tokens']
+        for k in ('input_tokens', 'cached_input_tokens', 'output_tokens', 'total_tokens'):
+            self.totals[k] += usage.get(k, 0)
         if cost is not None:
             self.totals['cost_usd'] = round(self.totals['cost_usd'] + cost, 6)
 
         call_str = f'${cost:.4f}' if cost is not None else 'n/a'
         cum_str = (f"${self.totals['cost_usd']:.4f}"
                    if self.price_in is not None else 'n/a')
+        cached = usage.get('cached_input_tokens', 0)
         self.log(f"    [cost] {bug_id}: in={usage['input_tokens']} "
-                 f"out={usage['output_tokens']} call={call_str} "
-                 f"cumulative={cum_str} ({len(self.calls)} calls)")
+                 f"(cached={cached}) out={usage['output_tokens']} "
+                 f"call={call_str} cumulative={cum_str} ({len(self.calls)} calls)")
         self.save()
         return cost
 
@@ -116,7 +137,9 @@ class CostTracker:
         with open(self.save_path, 'w') as f:
             json.dump({
                 'model': self.model,
-                'price_per_1m_usd': {'input': self.price_in, 'output': self.price_out},
+                'price_per_1m_usd': {'input': self.price_in,
+                                     'output': self.price_out,
+                                     'cached_input': self.price_cached},
                 'totals': self.totals,
                 'calls': self.calls,
             }, f, indent=2)

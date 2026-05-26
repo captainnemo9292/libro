@@ -141,14 +141,17 @@ For the FIB flow, `run_pipeline.py -p Time -b 18` runs a single bug.
   **cost**. `eval_augmented.py` then merges the **eval result** into the same
   file under an `eval` key.
 
-Pricing is USD per 1M tokens. Since model prices change, pass them explicitly:
+Pricing is USD per 1M tokens. `gpt-5.4-mini` is built into `cost.PRICING`
+(input $0.75, output $4.50, cached input $0.075), so cost — including the
+cheaper rate for cached prompt tokens — is computed automatically. For other
+models, either add an entry to `cost.PRICING` or pass prices explicitly:
 
 ```bash
-python gen_augmented.py ... --price-in 0.25 --price-out 2.00
+python gen_augmented.py ... --price-in 0.75 --price-out 4.50 --price-cached 0.075
 ```
 
-Without `--price-in/--price-out` (and no entry in `cost.PRICING`), token counts
-are still recorded but cost is left `null`.
+Without any pricing (no flags and no `cost.PRICING` entry), token counts are
+still recorded but cost is left `null`.
 
 To reconcile against OpenAI's actually-billed cost, `org_costs.py` queries the
 Organization Costs API (needs an admin key):

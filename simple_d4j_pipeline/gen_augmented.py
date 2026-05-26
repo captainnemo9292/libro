@@ -154,6 +154,8 @@ def main():
                     help='USD per 1M input tokens (overrides cost.PRICING)')
     ap.add_argument('--price-out', type=float,
                     help='USD per 1M output tokens (overrides cost.PRICING)')
+    ap.add_argument('--price-cached', type=float,
+                    help='USD per 1M cached input tokens (overrides cost.PRICING)')
     args = ap.parse_args()
 
     os.makedirs(args.tests_dir, exist_ok=True)
@@ -161,7 +163,8 @@ def main():
     os.makedirs(records_dir, exist_ok=True)
     cost_out = args.cost_out or path.join(records_dir, 'cost.json')
     tracker = cost.CostTracker(args.model, args.price_in, args.price_out,
-                               cost_out, logger=plog.log)
+                               cost_out, price_cached=args.price_cached,
+                               logger=plog.log)
 
     bugs = csv_data.load_incorrect(args.csv)
     targets = csv_data.select(bugs, args.project, args.bug)
