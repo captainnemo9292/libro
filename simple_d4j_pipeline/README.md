@@ -128,6 +128,31 @@ python eval_augmented.py   --csv data/LLM_patch_manual_evaluation.csv --repos-di
 
 For the FIB flow, `run_pipeline.py -p Time -b 18` runs a single bug.
 
+### Sweep k diverse bugs across several models
+
+`try_k.py` selects k bugs (default 30) spread across projects (deterministic
+via `--seed`), builds the shared checkouts + `buggy_<llm>` once, then runs
+generation + evaluation for each model into its own folder:
+
+```bash
+OPENAI_API_KEY=... python try_k.py --csv data/LLM_patch_manual_evaluation.csv \
+    --models gpt-5-mini gpt-5.2 gpt-5.4-mini \
+    --src-dir .. --out-dir ./results_k -k 30
+```
+
+Output:
+```
+results_k/selected_bugs.csv        the k bugs (filtered CSV driving every step)
+results_k/<model>/aug_tests/       generated tests + records/ + cost.json
+results_k/<model>/aug_results.json
+results_k/summary.json             correct/total + cost per model
+```
+
+`--src-dir` is the parent of `<Project>-<bug>/{buggy,fixed,source_*}` (copies
+checkouts and doubles as `--solutions-dir`); omit it to use `defects4j
+checkout`. Generation models are taken from `--models` and priced via
+`cost.PRICING`.
+
 ### Cost tracking & saved artifacts
 
 `gen_augmented.py` records token usage and cost for every API call:
@@ -185,6 +210,7 @@ OPENAI_ADMIN_KEY=sk-admin-... python org_costs.py --days 1
 | File | Role |
 |------|------|
 | `try_one.sh` | end-to-end smoke test of the augmented flow on one bug |
+| `try_k.py` | sweep k diverse bugs across several models into per-model folders |
 | `checkout_all.sh` | checkout buggy + fixed for all/selected bugs |
 | `import_checkouts.sh` | import existing buggy/ + fixed/ dirs into the repos/ layout |
 | `injector.py` | resolve imports + inject a method into the best test class |
