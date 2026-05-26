@@ -31,17 +31,30 @@ PRICE_ARGS=()
 [ -n "$PRICE_IN" ] && PRICE_ARGS+=(--price-in "$PRICE_IN")
 [ -n "$PRICE_OUT" ] && PRICE_ARGS+=(--price-out "$PRICE_OUT")
 
-# Optional: env SOLUTIONS_DIR = on-disk path to /data/d4j_subjects/d4j_bugs,
-# enabling full-file LLM solution replacement (robust vs. the reformatted diffs).
+# Optional: env SRC_DIR = parent dir holding <Project>-<bug>/{buggy,fixed} and
+# the LLM solution dirs (matching /data/d4j_subjects/d4j_bugs). When set, buggy/
+# fixed are copied from there (no defects4j checkout) and SOLUTIONS_DIR defaults
+# to it for full-file LLM solution replacement.
+SRC_DIR="${SRC_DIR:-}"
+SOLUTIONS_DIR="${SOLUTIONS_DIR:-$SRC_DIR}"
 PREP_ARGS=()
-[ -n "${SOLUTIONS_DIR:-}" ] && PREP_ARGS+=(--solutions-dir "$SOLUTIONS_DIR")
+[ -n "$SOLUTIONS_DIR" ] && PREP_ARGS+=(--solutions-dir "$SOLUTIONS_DIR")
 
 echo "### bug=${PID}-${BUG}  repos=${REPOS_DIR}  tests=${TESTS_DIR}  model=${MODEL}"
 
-echo "### [1/4] checkout buggy + fixed"
+echo "### [1/4] obtain buggy + fixed"
 mkdir -p "$REPOS_DIR"
-[ -d "$REPOS_DIR/${PID}_${BUG}b" ] || defects4j checkout -p "$PID" -v "${BUG}b" -w "$REPOS_DIR/${PID}_${BUG}b"
-[ -d "$REPOS_DIR/${PID}_${BUG}f" ] || defects4j checkout -p "$PID" -v "${BUG}f" -w "$REPOS_DIR/${PID}_${BUG}f"
+for pair in buggy:b fixed:f; do
+    sub="${pair%%:*}"; suf="${pair##*:}"
+    dest="$REPOS_DIR/${PID}_${BUG}${suf}"
+    [ -d "$dest" ] && continue
+    if [ -n "$SRC_DIR" ] && [ -d "$SRC_DIR/${PID}-${BUG}/$sub" ]; then
+        cp -a "$SRC_DIR/${PID}-${BUG}/$sub" "$dest"
+        echo "    copied $SRC_DIR/${PID}-${BUG}/$sub -> $(basename "$dest")"
+    else
+        defects4j checkout -p "$PID" -v "${BUG}${suf}" -w "$dest"
+    fi
+done
 
 echo "### [2/4] build buggy_<llm> from incorrect patch(es)"
 python "$HERE/prepare_patched.py" --csv "$CSV" --repos-dir "$REPOS_DIR" -p "$PID" -b "$BUG" \

@@ -62,12 +62,18 @@ python run_pipeline.py --tests-dir ./gen_tests --repos-dir ./repos --out results
 Input is the manual-evaluation CSV (incorrect LLM patches + developer fixes).
 
 ```bash
-# 1. checkouts (shared with Flow 1)
+# 1. obtain buggy + fixed checkouts
+#    (a) fresh from Defects4J:
 bash checkout_all.sh ./repos
+#    (b) OR import pre-existing checkouts from a d4j_subjects-style tree
+#        (<SRC>/<Project>-<bug>/{buggy,fixed}); skips defects4j checkout:
+bash import_checkouts.sh .. ./repos
 
-# 2. build buggy_<llm> checkouts from the incorrect patches
+# 2. build buggy_<llm> checkouts from the incorrect patches.
+#    --solutions-dir is the SAME parent dir as import_checkouts.sh's SRC: it
+#    holds <Project>-<bug>/source_ori-* (-ori) and source_patched_rst-* (-norm).
 python prepare_patched.py --csv eval.csv --repos-dir ./repos \
-    --solutions-dir data/d4j_subjects/d4j_bugs
+    --solutions-dir ..
 #    --solutions-dir PATH    on-disk path matching /data/d4j_subjects/d4j_bugs;
 #                            copies each LLM full solution file (robust) instead
 #                            of applying the diff. STRONGLY recommended -- the CSV
@@ -100,7 +106,12 @@ To sanity-check the whole augmented flow on one bug in one command
 
 ```bash
 OPENAI_API_KEY=... bash try_one.sh Chart 16
-# bash try_one.sh <Project> <bug> [REPOS_DIR] [TESTS_DIR] [CSV] [MODEL]
+# bash try_one.sh <Project> <bug> [REPOS_DIR] [TESTS_DIR] [CSV] [MODEL] [PRICE_IN] [PRICE_OUT]
+#
+# If you have pre-existing checkouts + solution dirs, point SRC_DIR at their
+# parent; buggy/fixed are copied (no defects4j checkout) and SOLUTIONS_DIR
+# defaults to it:
+#   SRC_DIR=.. OPENAI_API_KEY=... bash try_one.sh Jsoup 68
 ```
 
 Defaults: `REPOS_DIR=./repos`, `TESTS_DIR=./aug_tests`,
@@ -170,6 +181,7 @@ OPENAI_ADMIN_KEY=sk-admin-... python org_costs.py --days 1
 |------|------|
 | `try_one.sh` | end-to-end smoke test of the augmented flow on one bug |
 | `checkout_all.sh` | checkout buggy + fixed for all/selected bugs |
+| `import_checkouts.sh` | import existing buggy/ + fixed/ dirs into the repos/ layout |
 | `injector.py` | resolve imports + inject a method into the best test class |
 | `run_pipeline.py` | FIB runner (inject/compile/run on buggy+fixed) |
 | `csv_data.py` | read the eval CSV; bugs with incorrect `-ori`/`-norm` patches |
