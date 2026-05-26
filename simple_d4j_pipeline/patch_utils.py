@@ -15,6 +15,7 @@ the matching file inside the checkout, and apply the hunks there with GNU
 
 import os
 import re
+import shutil
 import tempfile
 import subprocess as sp
 from os import path
@@ -129,10 +130,30 @@ def _apply_hunks(repo, target_rel, hunks):
         os.unlink(patch_file)
 
 
-def apply_llm_patch(repo, src_dir, patch_text, include_tests=False):
-    """Apply the production-source sections of an LLM patch to a checkout.
+def solution_rel_path(header):
+    """From a '+++' header like
+    /data/d4j_subjects/d4j_bugs/Chart-16/source_ori-claude-sonnet-4/src/main/java/org/.../X.java
+    return the part after '/d4j_bugs/' (i.e. the path under the solutions dir),
+    or None."""
+    marker = '/d4j_bugs/'
+    i = header.find(marker)
+    if i == -1:
+        return None
+    return header[i + len(marker):]
 
-    Returns (applied, skipped, failed) lists of repo-relative paths / messages.
+
+def apply_llm_patch(repo, src_dir, patch_text, include_tests=False,
+                    solutions_dir=None):
+    """Reproduce the LLM's changes on a checkout.
+
+    If `solutions_dir` is given (the on-disk path corresponding to
+    /data/d4j_subjects/d4j_bugs), each changed production file is replaced
+    wholesale with the LLM's full solution file -- robust against the
+    reformatting in the CSV diffs. Falls back to applying the diff hunks when
+    the full file isn't found.
+
+    Returns (applied, skipped, failed). `applied` entries note the method, e.g.
+    'src/.../X.java (full-file)'.
     """
     applied, skipped, failed = [], [], []
     for sec in split_sections(patch_text):
@@ -145,6 +166,17 @@ def apply_llm_patch(repo, src_dir, patch_text, include_tests=False):
         if target is None:
             failed.append((pkg, 'file not found in checkout'))
             continue
+
+        # Preferred: copy the LLM's full solution file over the checkout file.
+        if solutions_dir:
+            rel = solution_rel_path(header)
+            src_file = path.join(solutions_dir, rel) if rel else None
+            if src_file and path.isfile(src_file):
+                shutil.copyfile(src_file, path.join(repo, target))
+                applied.append(f'{target} (full-file)')
+                continue
+
+        # Fallback: apply the diff hunks.
         ok, msg = _apply_hunks(repo, target, sec['hunks'])
         if ok:
             applied.append(target)

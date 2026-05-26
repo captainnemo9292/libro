@@ -63,7 +63,13 @@ Input is the manual-evaluation CSV (incorrect LLM patches + developer fixes).
 bash checkout_all.sh ./repos
 
 # 2. build buggy_<llm> checkouts from the incorrect patches
-python prepare_patched.py --csv eval.csv --repos-dir ./repos
+python prepare_patched.py --csv eval.csv --repos-dir ./repos \
+    --solutions-dir data/d4j_subjects/d4j_bugs
+#    --solutions-dir PATH    on-disk path matching /data/d4j_subjects/d4j_bugs;
+#                            copies each LLM full solution file (robust) instead
+#                            of applying the diff. STRONGLY recommended -- the CSV
+#                            diffs were generated against a reformatted base and
+#                            ~40% fail to apply cleanly. Diff is the fallback.
 #    --include-test-changes  also apply the LLM's edits to test files (default: skip)
 #    -p Chart                restrict to one project
 
@@ -141,8 +147,14 @@ OPENAI_ADMIN_KEY=sk-admin-... python org_costs.py --days 1
 
 - **Patch layout**: CSV patches use a normalized `src/main/java/` layout; d4j
   checkouts use the project's real source root. `patch_utils.py` reduces each
-  header to its package path, locates the real file, and applies hunks fuzzily,
-  so the layouts don't need to match.
+  header to its package path and locates the real file, so the layouts don't
+  need to match.
+- **Reformatted base**: the CSV diffs were generated against a reformatted
+  "restore" base, so applying them to the d4j buggy source fails on reflowed
+  lines (~40% of patches). Pass `--solutions-dir` so each changed file is
+  replaced wholesale with the LLM's full solution file (the solution path is
+  read from the diff's `+++` header, so the on-disk model-dir name -- e.g.
+  `source_ori-gemini-3-pro` -- need not match the CSV column name).
 - **Production-only by default**: `prepare_patched.py` applies only
   non-test source sections of an LLM patch. Use `--include-test-changes` to
   also apply test-file edits.

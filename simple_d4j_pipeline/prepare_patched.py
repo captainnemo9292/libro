@@ -35,7 +35,8 @@ def git_commit_all(repo, message):
            cwd=repo, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
 
-def build_one(repos_dir, pid, bug, llm_key, patch_text, include_tests):
+def build_one(repos_dir, pid, bug, llm_key, patch_text, include_tests,
+              solutions_dir=None):
     buggy = path.join(repos_dir, csv_data.repo_buggy(pid, bug))
     target = path.join(repos_dir, csv_data.repo_llm(pid, bug, llm_key))
 
@@ -47,7 +48,8 @@ def build_one(repos_dir, pid, bug, llm_key, patch_text, include_tests):
     sp.run(['cp', '-a', buggy, target], check=True)
     src_dir = export_dir(target, 'dir.src.classes')
     applied, skipped, failed = patch_utils.apply_llm_patch(
-        target, src_dir, patch_text, include_tests=include_tests)
+        target, src_dir, patch_text, include_tests=include_tests,
+        solutions_dir=solutions_dir)
 
     if not applied:
         # nothing applied -> not a usable variant; remove the copy
@@ -67,6 +69,10 @@ def main():
     ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
     ap.add_argument('--include-test-changes', action='store_true',
                     help='also apply the LLM patch to test files (default: skip)')
+    ap.add_argument('--solutions-dir',
+                    help='on-disk path corresponding to /data/d4j_subjects/d4j_bugs; '
+                         'when set, copies each LLM full solution file instead of '
+                         'applying the (reformatted) diff. Diff is used as fallback.')
     args = ap.parse_args()
 
     bugs = csv_data.load_incorrect(args.csv)
@@ -84,7 +90,7 @@ def main():
             plog.log(f'[prep {done}/{n_variants}] {tag}')
             status, detail = build_one(
                 args.repos_dir, info['pid'], info['bug'], llm_key,
-                patch_text, args.include_test_changes)
+                patch_text, args.include_test_changes, args.solutions_dir)
             counts[status] = counts.get(status, 0) + 1
             if status == 'ok':
                 plog.log(f'    OK: applied {detail["applied"]}'

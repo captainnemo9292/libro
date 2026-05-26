@@ -31,6 +31,11 @@ PRICE_ARGS=()
 [ -n "$PRICE_IN" ] && PRICE_ARGS+=(--price-in "$PRICE_IN")
 [ -n "$PRICE_OUT" ] && PRICE_ARGS+=(--price-out "$PRICE_OUT")
 
+# Optional: env SOLUTIONS_DIR = on-disk path to /data/d4j_subjects/d4j_bugs,
+# enabling full-file LLM solution replacement (robust vs. the reformatted diffs).
+PREP_ARGS=()
+[ -n "${SOLUTIONS_DIR:-}" ] && PREP_ARGS+=(--solutions-dir "$SOLUTIONS_DIR")
+
 echo "### bug=${PID}-${BUG}  repos=${REPOS_DIR}  tests=${TESTS_DIR}  model=${MODEL}"
 
 echo "### [1/4] checkout buggy + fixed"
@@ -39,7 +44,8 @@ mkdir -p "$REPOS_DIR"
 [ -d "$REPOS_DIR/${PID}_${BUG}f" ] || defects4j checkout -p "$PID" -v "${BUG}f" -w "$REPOS_DIR/${PID}_${BUG}f"
 
 echo "### [2/4] build buggy_<llm> from incorrect patch(es)"
-python "$HERE/prepare_patched.py" --csv "$CSV" --repos-dir "$REPOS_DIR" -p "$PID" -b "$BUG"
+python "$HERE/prepare_patched.py" --csv "$CSV" --repos-dir "$REPOS_DIR" -p "$PID" -b "$BUG" \
+    ${PREP_ARGS[@]+"${PREP_ARGS[@]}"}
 
 echo "### [3/4] generate augmented test (OpenAI)"
 python "$HERE/gen_augmented.py" --csv "$CSV" --repos-dir "$REPOS_DIR" \
