@@ -108,6 +108,35 @@ python eval_augmented.py   --csv data/LLM_patch_manual_evaluation.csv --repos-di
 
 For the FIB flow, `run_pipeline.py -p Time -b 18` runs a single bug.
 
+### Cost tracking & saved artifacts
+
+`gen_augmented.py` records token usage and cost for every API call:
+
+- Per-call and cumulative cost are logged live (`[cost] Chart-16: in=… out=… call=$… cumulative=$…`).
+- A cumulative cost file is written to `<tests-dir>/records/cost.json`
+  (model, prices, totals, and every call), and is resumable across runs.
+- A per-bug artifact `<tests-dir>/records/<pid>_<bug>.json` saves the
+  **prompt inputs** (developer patch, LLM patches, failing tests), the **full
+  prompt**, the **raw reply**, the **generated method**, **token usage**, and
+  **cost**. `eval_augmented.py` then merges the **eval result** into the same
+  file under an `eval` key.
+
+Pricing is USD per 1M tokens. Since model prices change, pass them explicitly:
+
+```bash
+python gen_augmented.py ... --price-in 0.25 --price-out 2.00
+```
+
+Without `--price-in/--price-out` (and no entry in `cost.PRICING`), token counts
+are still recorded but cost is left `null`.
+
+To reconcile against OpenAI's actually-billed cost, `org_costs.py` queries the
+Organization Costs API (needs an admin key):
+
+```bash
+OPENAI_ADMIN_KEY=sk-admin-... python org_costs.py --days 1
+```
+
 ### Notes
 
 - **Patch layout**: CSV patches use a normalized `src/main/java/` layout; d4j
@@ -133,6 +162,8 @@ For the FIB flow, `run_pipeline.py -p Time -b 18` runs a single bug.
 | `prepare_patched.py` | build `buggy_<llm>` checkouts |
 | `d4j_tests.py` | extract bug-triggering developer test methods |
 | `java_utils.py` | literal/comment-aware Java brace matching |
-| `gen_augmented.py` | build prompt + query OpenAI + parse the test method |
-| `eval_augmented.py` | run augmented test on buggy/fixed/buggy_<llm> |
+| `gen_augmented.py` | build prompt + query OpenAI + parse the test method; track cost; save artifacts |
+| `eval_augmented.py` | run augmented test on buggy/fixed/buggy_<llm>; merge eval into records |
+| `cost.py` | token-usage cost computation + cumulative tracker |
+| `org_costs.py` | reconcile against OpenAI's billed Organization Costs API |
 | `report_stats.py` | aggregate success stats |

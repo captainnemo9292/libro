@@ -104,7 +104,11 @@ def main():
     ap.add_argument('--out', default='aug_results.json')
     ap.add_argument('-p', '--project')
     ap.add_argument('-b', '--bug', help='restrict to one bug id (use with -p)')
+    ap.add_argument('--records-dir',
+                    help='per-bug artifact dir to merge eval into '
+                         '(default <tests-dir>/records)')
     args = ap.parse_args()
+    records_dir = args.records_dir or path.join(args.tests_dir, 'records')
 
     bugs = csv_data.load_incorrect(args.csv)
     targets = [(b, i) for b, i in csv_data.select(bugs, args.project, args.bug)
@@ -129,6 +133,18 @@ def main():
         n_correct += int(res['correctly_augmented'])
         verdict = 'CORRECTLY AUGMENTED' if res['correctly_augmented'] else 'not distinguishing'
         plog.log(f'    => {verdict}  ({n_correct} correct so far)')
+
+        # Merge the eval result into the per-bug generation record if present.
+        rec_path = path.join(records_dir, f'{pid}_{bug}.json')
+        if path.isfile(rec_path):
+            try:
+                with open(rec_path) as f:
+                    rec = json.load(f)
+                rec['eval'] = res
+                with open(rec_path, 'w') as f:
+                    json.dump(rec, f, indent=2)
+            except (ValueError, OSError):
+                pass
         with open(args.out, 'w') as f:
             json.dump(results, f, indent=2)
 

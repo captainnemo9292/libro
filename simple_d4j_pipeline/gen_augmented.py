@@ -16,10 +16,13 @@ Usage:
 
 import os
 import re
+import json
+import time
 import argparse
 from os import path
 
 import csv_data
+import cost
 import d4j_tests
 import plog
 from java_utils import matching_brace
@@ -119,15 +122,16 @@ def extract_test_method(text):
 
 
 def query_openai(prompt, model):
+    """Return (reply_text, usage_dict)."""
     from openai import OpenAI
     client = OpenAI()
     try:
         resp = client.responses.create(model=model, input=prompt)
-        return resp.output_text
+        return resp.output_text, cost.normalize_usage(resp)
     except (AttributeError, TypeError):
         resp = client.chat.completions.create(
             model=model, messages=[{'role': 'user', 'content': prompt}])
-        return resp.choices[0].message.content
+        return resp.choices[0].message.content, cost.normalize_usage(resp)
 
 
 def main():
@@ -142,9 +146,23 @@ def main():
     ap.add_argument('--overwrite', action='store_true')
     ap.add_argument('--save-prompts', action='store_true',
                     help='also write the prompt to <tests-dir>/<bug>_prompt.txt')
+    ap.add_argument('--records-dir',
+                    help='dir for per-bug artifact JSON (default <tests-dir>/records)')
+    ap.add_argument('--cost-out',
+                    help='cumulative cost JSON (default <records-dir>/cost.json)')
+    ap.add_argument('--price-in', type=float,
+                    help='USD per 1M input tokens (overrides cost.PRICING)')
+    ap.add_argument('--price-out', type=float,
+                    help='USD per 1M output tokens (overrides cost.PRICING)')
     args = ap.parse_args()
 
     os.makedirs(args.tests_dir, exist_ok=True)
+    records_dir = args.records_dir or path.join(args.tests_dir, 'records')
+    os.makedirs(records_dir, exist_ok=True)
+    cost_out = args.cost_out or path.join(records_dir, 'cost.json')
+    tracker = cost.CostTracker(args.model, args.price_in, args.price_out,
+                               cost_out, logger=plog.log)
+
     bugs = csv_data.load_incorrect(args.csv)
     targets = csv_data.select(bugs, args.project, args.bug)
     plog.log(f'generating augmented tests for {len(targets)} bug(s) '
@@ -181,13 +199,34 @@ def main():
         plog.log(f'    querying OpenAI ({len(prompt)} char prompt)...')
 
         try:
-            reply = query_openai(prompt, args.model)
+            reply, usage = query_openai(prompt, args.model)
         except Exception as e:
             plog.log(f'    FAIL: API error {e!r}')
             n_fail += 1
             continue
 
+        call_cost = tracker.add(bug_id, usage)
         method = extract_test_method(reply)
+
+        # Persist all generation artifacts for this bug.
+        record = {
+            'bug_id': bug_id, 'pid': pid, 'bug': bug, 'model': args.model,
+            'incorrect_models': [k for k, _ in info['incorrect']],
+            'inputs': {
+                'dev_patch': info['dev_patch'],
+                'llm_patches': [{'model': k, 'patch': p} for k, p in info['incorrect']],
+                'failing_tests': failing_tests,
+            },
+            'prompt': prompt,
+            'raw_reply': reply,
+            'generated_method': method,
+            'usage': usage,
+            'cost_usd': call_cost,
+            'generated_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        }
+        with open(path.join(records_dir, f'{pid}_{bug}.json'), 'w') as f:
+            json.dump(record, f, indent=2)
+
         if not method:
             plog.log(f'    FAIL: could not parse a test method from reply '
                      f'(raw saved to {path.basename(out_path)}.raw)')
@@ -199,10 +238,13 @@ def main():
         with open(out_path, 'w') as f:
             f.write(method)
         plog.block('generated test method', method)
-        plog.log(f'    saved -> {path.basename(out_path)}')
+        plog.log(f'    saved -> {path.basename(out_path)}  (record: {pid}_{bug}.json)')
         n_done += 1
 
+    t = tracker.totals
     plog.log(f'[done] generated={n_done} failed={n_fail} skipped={n_skip}')
+    plog.log(f'[cost] cumulative: {t["total_tokens"]} tokens, '
+             f'${t["cost_usd"]:.4f} over {len(tracker.calls)} calls -> {cost_out}')
 
 
 if __name__ == '__main__':
