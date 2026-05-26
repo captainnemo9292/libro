@@ -21,6 +21,7 @@ from os import path
 
 import csv_data
 import d4j_tests
+import plog
 from java_utils import matching_brace
 
 
@@ -144,38 +145,52 @@ def main():
 
     os.makedirs(args.tests_dir, exist_ok=True)
     bugs = csv_data.load_incorrect(args.csv)
+    targets = [(b, i) for b, i in sorted(bugs.items())
+               if not args.project or i['pid'] == args.project]
+    plog.log(f'generating augmented tests for {len(targets)} bug(s) '
+             f'with model={args.model}')
 
-    n_done = n_fail = 0
-    for bug_id, info in sorted(bugs.items()):
-        if args.project and info['pid'] != args.project:
-            continue
+    n_done = n_fail = n_skip = 0
+    for idx, (bug_id, info) in enumerate(targets, 1):
         pid, bug = info['pid'], info['bug']
+        models = ', '.join(k for k, _ in info['incorrect'])
+        plog.log(f'[gen {idx}/{len(targets)}] {bug_id}  incorrect_models=[{models}]')
+
         out_path = path.join(args.tests_dir, f'{pid}_{bug}_aug.txt')
         if path.exists(out_path) and not args.overwrite:
+            plog.log(f'    skip: {path.basename(out_path)} already exists')
+            n_skip += 1
             continue
 
         fixed = path.join(args.repos_dir, csv_data.repo_fixed(pid, bug))
         buggy = path.join(args.repos_dir, csv_data.repo_buggy(pid, bug))
         src_repo = fixed if path.isdir(fixed) else buggy
         if not path.isdir(src_repo):
-            print(f'[skip] {bug_id}: no checkout to read triggering tests from')
+            plog.log(f'    skip: no checkout to read triggering tests from')
+            n_skip += 1
             continue
+
         failing_tests = d4j_tests.collect_trigger_sources(src_repo)
+        n_trigger = failing_tests.count('//') if failing_tests else 0
+        plog.log(f'    triggering dev tests: ~{n_trigger} method(s), '
+                 f'{len(failing_tests)} chars  (from {path.basename(src_repo)})')
         prompt = build_prompt(info, failing_tests)
         if args.save_prompts:
             with open(path.join(args.tests_dir, f'{pid}_{bug}_prompt.txt'), 'w') as f:
                 f.write(prompt)
+        plog.log(f'    querying OpenAI ({len(prompt)} char prompt)...')
 
         try:
             reply = query_openai(prompt, args.model)
         except Exception as e:
-            print(f'[fail] {bug_id}: API error {e!r}')
+            plog.log(f'    FAIL: API error {e!r}')
             n_fail += 1
             continue
 
         method = extract_test_method(reply)
         if not method:
-            print(f'[fail] {bug_id}: could not parse a test method from reply')
+            plog.log(f'    FAIL: could not parse a test method from reply '
+                     f'(raw saved to {path.basename(out_path)}.raw)')
             with open(out_path + '.raw', 'w') as f:
                 f.write(reply)
             n_fail += 1
@@ -183,10 +198,11 @@ def main():
 
         with open(out_path, 'w') as f:
             f.write(method)
-        print(f'[ok]   {bug_id} -> {path.basename(out_path)}')
+        plog.block('generated test method', method)
+        plog.log(f'    saved -> {path.basename(out_path)}')
         n_done += 1
 
-    print(f'[done] generated={n_done} failed={n_fail}')
+    plog.log(f'[done] generated={n_done} failed={n_fail} skipped={n_skip}')
 
 
 if __name__ == '__main__':

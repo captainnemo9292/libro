@@ -20,6 +20,7 @@ from os import path
 
 import csv_data
 import patch_utils
+import plog
 
 
 def export_dir(repo, prop):
@@ -68,28 +69,34 @@ def main():
     args = ap.parse_args()
 
     bugs = csv_data.load_incorrect(args.csv)
+    targets = [(b, i) for b, i in sorted(bugs.items())
+               if not args.project or i['pid'] == args.project]
+    n_variants = sum(len(i['incorrect']) for _, i in targets)
+    plog.log(f'building buggy_<llm> checkouts: {len(targets)} bug(s), '
+             f'{n_variants} variant(s)')
+
     counts = {'ok': 0, 'exists': 0, 'missing-buggy': 0, 'no-change': 0}
-    for bug_id, info in sorted(bugs.items()):
-        if args.project and info['pid'] != args.project:
-            continue
+    done = 0
+    for bug_id, info in targets:
         for llm_key, patch_text in info['incorrect']:
+            done += 1
+            tag = csv_data.repo_llm(info['pid'], info['bug'], llm_key)
+            plog.log(f'[prep {done}/{n_variants}] {tag}')
             status, detail = build_one(
                 args.repos_dir, info['pid'], info['bug'], llm_key,
                 patch_text, args.include_test_changes)
             counts[status] = counts.get(status, 0) + 1
-            tag = csv_data.repo_llm(info['pid'], info['bug'], llm_key)
             if status == 'ok':
-                msg = f"applied={len(detail['applied'])}"
-                if detail['failed']:
-                    msg += f" FAILED={detail['failed']}"
-                print(f'[ok]   {tag}: {msg}')
+                plog.log(f'    OK: applied {detail["applied"]}'
+                         + (f'  skipped_tests={len(detail["skipped"])}' if detail['skipped'] else '')
+                         + (f'  FAILED={detail["failed"]}' if detail['failed'] else ''))
             elif status == 'no-change':
-                failed = detail['failed']
-                print(f'[warn] {tag}: nothing applied (failed={failed})')
+                plog.log(f'    warn: nothing applied (failed={detail["failed"]})')
             elif status == 'missing-buggy':
-                print(f'[skip] {tag}: buggy checkout missing')
-            # 'exists' is silent-ish
-    print(f'[done] {counts}')
+                plog.log(f'    skip: buggy checkout missing')
+            elif status == 'exists':
+                plog.log(f'    skip: already built')
+    plog.log(f'[done] {counts}')
 
 
 if __name__ == '__main__':

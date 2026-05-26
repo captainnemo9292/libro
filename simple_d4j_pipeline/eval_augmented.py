@@ -17,6 +17,7 @@ import argparse
 from os import path
 
 import csv_data
+import plog
 import run_pipeline as rp
 
 
@@ -57,16 +58,26 @@ def eval_bug(repos_dir, pid, bug, incorrect, gen_test):
     if not path.isdir(buggy) or not path.isdir(fixed):
         return None
 
-    versions['buggy'], detail['buggy'] = run_version(buggy, gen_test)
-    versions['fixed'], detail['fixed'] = run_version(fixed, gen_test)
+    want = {'buggy': 'fail', 'fixed': 'pass'}
+
+    def run_and_log(name, repo):
+        status, det = run_version(repo, gen_test)
+        expect = want.get(name, 'fail')  # llm variants should fail
+        mark = 'OK ' if status == expect else '!! '
+        plog.log(f'    {mark}{name:<28} -> {status}  (want {expect})')
+        return status, det
+
+    versions['buggy'], detail['buggy'] = run_and_log('buggy', buggy)
+    versions['fixed'], detail['fixed'] = run_and_log('fixed', fixed)
 
     llm_variants = []
     for llm_key, _patch in incorrect:
         vdir = path.join(repos_dir, csv_data.repo_llm(pid, bug, llm_key))
         if not path.isdir(vdir):
+            plog.log(f'    -- buggy_{llm_key} (checkout missing, skipped)')
             continue
         name = f'buggy_{llm_key}'
-        versions[name], detail[name] = run_version(vdir, gen_test)
+        versions[name], detail[name] = run_and_log(name, vdir)
         llm_variants.append(name)
 
     correctly_augmented = (
@@ -95,31 +106,34 @@ def main():
     args = ap.parse_args()
 
     bugs = csv_data.load_incorrect(args.csv)
+    targets = [(b, i) for b, i in sorted(bugs.items())
+               if not args.project or i['pid'] == args.project]
+    targets = [(b, i) for b, i in targets
+               if path.isfile(path.join(args.tests_dir, f"{i['pid']}_{i['bug']}_aug.txt"))]
+    plog.log(f'evaluating {len(targets)} augmented test(s)')
+
     results = {}
     n_correct = 0
-    for bug_id, info in sorted(bugs.items()):
-        if args.project and info['pid'] != args.project:
-            continue
+    for idx, (bug_id, info) in enumerate(targets, 1):
         pid, bug = info['pid'], info['bug']
         test_file = path.join(args.tests_dir, f'{pid}_{bug}_aug.txt')
-        if not path.isfile(test_file):
-            continue
         with open(test_file) as f:
             gen_test = rp.strip_fences(f.read())
 
-        print(f'=== {bug_id} ===', flush=True)
+        plog.log(f'=== [eval {idx}/{len(targets)}] {bug_id} ===')
+        plog.block('augmented test method', gen_test)
         res = eval_bug(args.repos_dir, pid, bug, info['incorrect'], gen_test)
         if res is None:
-            print(f'    [skip] missing buggy/fixed checkout')
+            plog.log('    skip: missing buggy/fixed checkout')
             continue
         results[bug_id] = res
         n_correct += int(res['correctly_augmented'])
-        print(f"    {res['versions']} -> correct={res['correctly_augmented']}",
-              flush=True)
+        verdict = 'CORRECTLY AUGMENTED' if res['correctly_augmented'] else 'not distinguishing'
+        plog.log(f'    => {verdict}  ({n_correct} correct so far)')
         with open(args.out, 'w') as f:
             json.dump(results, f, indent=2)
 
-    print(f'[done] correctly augmented: {n_correct}/{len(results)} -> {args.out}')
+    plog.log(f'[done] correctly augmented: {n_correct}/{len(results)} -> {args.out}')
 
 
 if __name__ == '__main__':

@@ -33,6 +33,7 @@ import subprocess as sp
 from os import path
 
 import injector
+import plog
 
 
 TEST_TIMEOUT = '1m'   # per-test wall-clock cap passed to `timeout`
@@ -136,12 +137,13 @@ def eval_bug(proj, bug, tests_dir, repos_dir):
         with open(fp) as f:
             tests.append(strip_fences(f.read()))
 
+    plog.log(f'    {len(tests)} candidate test(s)')
     per_version = {}
     for tag, repo in (('buggy', buggy), ('fixed', fixed)):
         src_dir = export_dir(repo, 'dir.src.classes')
         test_dir = export_dir(repo, 'dir.src.tests')
         outcomes = []
-        for gen_test in tests:
+        for i, gen_test in enumerate(tests):
             try:
                 outcomes.append(run_one(repo, gen_test, src_dir, test_dir))
             except Exception as e:  # parse / injection failure -> record, keep going
@@ -153,8 +155,12 @@ def eval_bug(proj, bug, tests_dir, repos_dir):
         name = path.basename(fp)
         if isinstance(b_info, str) or isinstance(f_info, str):
             results[name] = {'buggy': b_info, 'fixed': f_info, 'success': False}
+            plog.log(f'    {name}: error  buggy={b_info if isinstance(b_info,str) else "ok"} '
+                     f'fixed={f_info if isinstance(f_info,str) else "ok"}')
             continue
         success = fails_autogen(b_info) and not fails_autogen(f_info)
+        plog.log(f'    {name}: buggy={"fail" if fails_autogen(b_info) else "pass"} '
+                 f'fixed={"fail" if fails_autogen(f_info) else "pass"} -> success={success}')
         results[name] = {'buggy': b_info, 'fixed': f_info, 'success': success}
     return results
 
@@ -186,23 +192,23 @@ def main():
     else:
         bugs = discover_bugs(args.tests_dir)
 
+    plog.log(f'running FIB evaluation for {len(bugs)} bug(s)')
     all_results = {}
     n_success = 0
-    for proj, bug in bugs:
-        print(f'=== {proj}-{bug} ===', flush=True)
+    for idx, (proj, bug) in enumerate(bugs, 1):
+        plog.log(f'=== [{idx}/{len(bugs)}] {proj}-{bug} ===')
         res = eval_bug(proj, bug, args.tests_dir, args.repos_dir)
         if res is None:
             continue
         all_results[f'{proj}_{bug}'] = res
         bug_success = sum(1 for r in res.values() if r['success'])
         n_success += bug_success
-        print(f'    {bug_success}/{len(res)} candidate tests reproduce the bug',
-              flush=True)
+        plog.log(f'    {bug_success}/{len(res)} candidate test(s) reproduce the bug')
         with open(args.out, 'w') as f:
             json.dump(all_results, f, indent=2)
 
-    print(f'[done] {n_success} reproducing tests across {len(all_results)} bugs '
-          f'-> {args.out}')
+    plog.log(f'[done] {n_success} reproducing tests across {len(all_results)} bugs '
+             f'-> {args.out}')
 
 
 if __name__ == '__main__':
