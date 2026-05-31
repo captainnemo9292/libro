@@ -67,6 +67,30 @@ def main():
             for s in statuses)
         print(f'  {v:<{name_w}}  {n:>4}  {cells}')
 
+    # Per-LLM-variant success: for each LLM whose incorrect patch produced a
+    # buggy_<llm>, how many bugs does the augmented test correctly distinguish
+    # (pass on fixed + fail on buggy + fail on THIS variant) out of how many
+    # bugs have a variant for this LLM.
+    per_llm = defaultdict(lambda: [0, 0])   # llm_key -> [correct, total]
+    for r in results.values():
+        fixed_ok = r['versions'].get('fixed') == 'pass'
+        buggy_fail = r['versions'].get('buggy') == 'fail'
+        for v in r['llm_variants']:
+            key = v[len('buggy_'):] if v.startswith('buggy_') else v
+            per_llm[key][1] += 1
+            if fixed_ok and buggy_fail and r['versions'].get(v) == 'fail':
+                per_llm[key][0] += 1
+
+    if per_llm:
+        print('-' * 64)
+        print('Per-LLM success (pass fixed & fail buggy & fail this variant):')
+        lw = max(len(k) for k in per_llm)
+        print(f'  {"llm":<{lw}}  {"correct/total":>14}     %')
+        for key in sorted(per_llm):
+            ok, tot = per_llm[key]
+            pctn = f'{100 * ok / tot:>4.0f}%' if tot else '  n/a'
+            print(f'  {key:<{lw}}  {ok:>6}/{tot:<7}  {pctn}')
+
     if args.by_project:
         per = defaultdict(lambda: [0, 0])
         for r in results.values():
