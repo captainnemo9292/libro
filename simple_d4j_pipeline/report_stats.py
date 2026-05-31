@@ -22,31 +22,50 @@ def main():
     total = len(results)
     correct = sum(1 for r in results.values() if r['correctly_augmented'])
 
-    # Per-version status tallies, plus the three success conditions.
+    # Three success conditions.
     fixed_pass = sum(1 for r in results.values() if r['versions'].get('fixed') == 'pass')
     buggy_fail = sum(1 for r in results.values() if r['versions'].get('buggy') == 'fail')
     all_llm_fail = sum(
         1 for r in results.values()
         if r['llm_variants'] and all(r['versions'][v] == 'fail' for v in r['llm_variants']))
 
-    fixed_status = Counter(r['versions'].get('fixed') for r in results.values())
-    buggy_status = Counter(r['versions'].get('buggy') for r in results.values())
-    llm_status = Counter(
-        r['versions'][v] for r in results.values() for v in r['llm_variants'])
+    # Per-version status counts (every distinct version name across all bugs).
+    per_version = defaultdict(Counter)
+    for r in results.values():
+        for vname, status in r['versions'].items():
+            per_version[vname][status] += 1
 
     pct = lambda n: f'{100 * n / total:.1f}%' if total else 'n/a'
 
     print(f'Bugs evaluated:        {total}')
     print(f'Correctly augmented:   {correct}  ({pct(correct)})')
-    print('-' * 48)
-    print(f'  pass on fixed:       {fixed_pass}  ({pct(fixed_pass)})')
-    print(f'  fail on buggy:       {buggy_fail}  ({pct(buggy_fail)})')
+    print('-' * 64)
+    print(f'  pass on fixed:         {fixed_pass}  ({pct(fixed_pass)})')
+    print(f'  fail on buggy:         {buggy_fail}  ({pct(buggy_fail)})')
     print(f'  fail on all buggy_llm: {all_llm_fail}  ({pct(all_llm_fail)})')
-    print('-' * 48)
-    print(f'  fixed status:        {dict(fixed_status)}')
-    print(f'  buggy status:        {dict(buggy_status)}')
-    print(f'  buggy_llm status:    {dict(llm_status)}  '
-          f'({sum(llm_status.values())} variants)')
+    print('-' * 64)
+
+    # Order versions: fixed, buggy, then llm variants alphabetically.
+    canonical = []
+    if 'fixed' in per_version:
+        canonical.append('fixed')
+    if 'buggy' in per_version:
+        canonical.append('buggy')
+    canonical += sorted(v for v in per_version if v not in ('fixed', 'buggy'))
+
+    statuses = ('pass', 'fail', 'compile_error', 'error')
+    name_w = max((len(v) for v in canonical), default=12)
+    header = (f'  {"version":<{name_w}}  {"n":>4}  ' +
+              '  '.join(f'{s:>13}' for s in statuses))
+    print('Per-version status:')
+    print(header)
+    for v in canonical:
+        c = per_version[v]
+        n = sum(c.values())
+        cells = '  '.join(
+            f'{c[s]:>5} ({100 * c[s] / n:>4.0f}%)' if n else f'{"-":>13}'
+            for s in statuses)
+        print(f'  {v:<{name_w}}  {n:>4}  {cells}')
 
     if args.by_project:
         per = defaultdict(lambda: [0, 0])
