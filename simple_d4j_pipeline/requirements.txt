@@ -1,0 +1,5 @@
+# Java source parsing / test injection (injector.py, run_pipeline.py, eval_augmented.py)
+javalang>=0.13.0
+
+# OpenAI API for augmented-test generation (gen_augmented.py only)
+openai>=1.0.0
