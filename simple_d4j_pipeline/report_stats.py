@@ -30,10 +30,18 @@ def main():
         if r['llm_variants'] and all(r['versions'][v] == 'fail' for v in r['llm_variants']))
 
     # Per-version status counts (every distinct version name across all bugs).
+    # `n/a` covers bugs that don't have that variant, so every row sums to
+    # `total` (the number of bugs / augmented tests).
     per_version = defaultdict(Counter)
+    all_versions = set()
     for r in results.values():
-        for vname, status in r['versions'].items():
-            per_version[vname][status] += 1
+        all_versions.update(r['versions'].keys())
+    for r in results.values():
+        for vname in all_versions:
+            if vname in r['versions']:
+                per_version[vname][r['versions'][vname]] += 1
+            else:
+                per_version[vname]['n/a'] += 1
 
     pct = lambda n: f'{100 * n / total:.1f}%' if total else 'n/a'
 
@@ -53,19 +61,18 @@ def main():
         canonical.append('buggy')
     canonical += sorted(v for v in per_version if v not in ('fixed', 'buggy'))
 
-    statuses = ('pass', 'fail', 'compile_error', 'error')
+    statuses = ('pass', 'fail', 'compile_error', 'error', 'n/a')
     name_w = max((len(v) for v in canonical), default=12)
-    header = (f'  {"version":<{name_w}}  {"n":>4}  ' +
+    header = (f'  {"version":<{name_w}}  {"total":>5}  ' +
               '  '.join(f'{s:>13}' for s in statuses))
-    print('Per-version status:')
+    print(f'Per-version status (total = {total} bugs / augmented tests):')
     print(header)
     for v in canonical:
         c = per_version[v]
-        n = sum(c.values())
         cells = '  '.join(
-            f'{c[s]:>5} ({100 * c[s] / n:>4.0f}%)' if n else f'{"-":>13}'
+            f'{c[s]:>5} ({100 * c[s] / total:>4.0f}%)' if total else f'{"-":>13}'
             for s in statuses)
-        print(f'  {v:<{name_w}}  {n:>4}  {cells}')
+        print(f'  {v:<{name_w}}  {total:>5}  {cells}')
 
     # Per-LLM patch kill rate.
     # success = test passes on fixed AND fails on buggy AND fails on THIS llm variant.
